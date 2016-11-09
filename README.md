@@ -1,6 +1,9 @@
 # sparkle-pack-aws-my-snapshots
-SparklePack to auto-detect EBS snapshots based on a `backup_id` AWS resource
+SparklePack that provides two registries: 
+
+- auto-detects EBS snapshots based on a `backup_id` AWS resource
 tag.
+- also detects RDS snapshots based on a DB Instance Identifier.
 
 h/t to [techshell](https://github.com/techshell) for this approach.
 
@@ -28,6 +31,7 @@ default, it will return block device mappings for GP2 volumes restored from the
 latest set of snapshots based on the latest `backup_id` tag, though you can
 specify an ID and other options when calling the registry.
 
+A second registry provides snapshot identifers for an RDS database.
 See below.
 
 ## Usage
@@ -35,21 +39,28 @@ See below.
 Add the pack to your Gemfile and .sfn:
 
 Gemfile:
-```ruby source 'https://rubygems.org'
+```ruby
+source 'https://rubygems.org'
 gem 'sfn'
-gem 'sparkle-pack-aws-aws-my-snapshots' ```
+gem 'sparkle-pack-aws-my-snapshots'
+```
 
 .sfn:
-```ruby Configuration.new do
+```ruby
+Configuration.new do
   sparkle_pack [ 'sparkle-pack-aws-my-snapshots' ] ...
-end ```
+end
+```
 
-In a SparkleFormation Template/Component/Dynamic:
-```ruby block_device_mappings registry!(:volumes_from_snapshot, options) ```
+### EBS Snapshots
+In a SparkleFormation resource:
+```ruby
+block_device_mappings registry!(:volumes_from_ebs_snapshot, options)
+```
 
 The `volumes_from_snapshot` registry will return a list of block device mappings.
 
-### Options
+#### Options
 
 The registry can take an options hash:
 
@@ -57,3 +68,22 @@ The registry can take an options hash:
 - volume_type: 'gp2', 'io1', or even 'magnetic,' if you must
 - iops: provisioned IOPS, if creating io1 volumes.  Default is 3 * volume size.
 - root_vol_size: the size of the root volume (/dev/sda).  Defaults to 12 GB.
+
+### RDS Snapshots
+In a SparkleFormation resource,
+```ruby
+   d_b_snapshot_identifier registry!(:latest_rds_snapshot, 'my-db-instance')
+```
+
+The `latest_rds_snapshot` registry will return a database snapshot identifier for the
+'my-db-instance' RDS instance.
+
+```ruby
+parameters(:snapshot_to_restore) do
+  type 'String'
+  allowed_values registry!(:all_rds_snapshots, 'my-db-instance')
+end
+```
+
+The `all_rds_snapshots` will return all snapshot identifiers available for the
+'my-db-instance' RDS instance.

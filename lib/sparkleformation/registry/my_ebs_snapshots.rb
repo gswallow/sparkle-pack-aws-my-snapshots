@@ -5,7 +5,7 @@ restorable_id = ::String.new
 selected_snaps = ::Array.new
 ec2 = ::Aws::EC2::Client.new
 
-SfnRegistry.register(:volumes_from_snapshot) do |options = {}|
+SfnRegistry.register(:volumes_from_ebs_snapshot) do |options = {}|
 
   restorable_id = options.fetch('restorable_id', nil)
   volume_type = options.fetch('volume_type', 'gp2')
