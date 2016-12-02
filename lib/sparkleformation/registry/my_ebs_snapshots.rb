@@ -1,37 +1,32 @@
 require 'aws-sdk-core'
 
 backup_snaps = ::Array.new
-restorable_id = ::String.new
-selected_snaps = ::Array.new
+ids = ::Array.new
 ec2 = ::Aws::EC2::Client.new
 
-SfnRegistry.register(:volumes_from_ebs_snapshot) do |options = {}|
+backup_snaps = ec2.describe_snapshots(
+  restorable_by_user_ids: [ ENV['AWS_CUSTOMER_ID'] ],
+  filters: [
+    { name: 'tag-key', values: [ 'backup_id' ] },
+    { name: 'status', values: [ 'completed' ] }
+  ]
+).snapshots
 
-  restorable_id = options.fetch('restorable_id', nil)
-  volume_type = options.fetch('volume_type', 'gp2')
-  iops = options.fetch('iops', 0)
-  root_vol_size = options.fetch('root_vol_size', '12')
+ids = backup_snaps.collect do |snap|
+  snap.tags.collect { |tag| tag.value if tag.key == 'backup_id' }.compact.first
+end.uniq.sort
 
-  backup_snaps = ec2.describe_snapshots(
-    restorable_by_user_ids: [ ENV['AWS_CUSTOMER_ID'] ],
-    filters: [
-      { name: 'tag-key', values: [ 'backup_id' ] },
-      { name: 'status', values: [ 'completed' ] }
-    ]
-  ).snapshots
+SfnRegistry.register(:backup_ids) do
+  ids << 'latest'
+end
 
-  restorable_id ||= backup_snaps.collect do |snap|
-    snap.tags.collect { |tag| tag.value if tag.key == "backup_id" }.compact.first
-  end.sort.last
+SfnRegistry.register(:ebs_volumes) do |options = {}|
 
-  selected_snaps = ec2.describe_snapshots(
-    restorable_by_user_ids: [ ENV['AWS_CUSTOMER_ID'] ],
-    filters: [
-      { name: 'tag-key', values: [ 'backup_id' ] },
-      { name: 'tag-value', values: [ restorable_id ] },
-      { name: 'status', values: [ 'completed' ] }
-    ]
-  ).snapshots
+  volume_size = options.fetch(:volume_size, 0)
+  volume_count = options.fetch(:volume_count, 0)
+  provisioned_iops = options.fetch(:provisioned_iops, 0)
+  delete_on_termination = options.fetch(:delete_on_termination, 'true')
+  root_vol_size = options.fetch(:root_vol_size, '12')
 
   array!(
     -> {
@@ -39,18 +34,17 @@ SfnRegistry.register(:volumes_from_ebs_snapshot) do |options = {}|
       ebs do
         delete_on_termination 'true'
         volume_type 'gp2'
-        volume_size root_vol_size.to_s
+        volume_size root_vol_size
       end
     },
-    *selected_snaps.count.times.map { |c| -> {
+    *volume_count.to_i.times.map { |c| -> {
       device_name "/dev/sd#{(102 + c).chr}" # f, g, h, i...
       ebs do
-        if volume_type == 'io1'
-          iops (iops == 0 ? 3 * selected_snaps[c].volume_size : iops).to_s
-        end
-        delete_on_termination 'true'
-        snapshot_id selected_snaps[c].snapshot_id
-        volume_type volume_type
+        delete_on_termination delete_on_termination
+        snapshot_id if!(options[:restore_condition], select!(c, map!(:snapshots_by_backup_id, ref!(:restorable_id), :snapshots)), no_value!)
+        volume_size if!(options[:restore_condition], no_value!, volume_size)
+        volume_type if!(options[:io1_condition], 'io1', 'gp2')
+        iops if!(options[:io1_condition], provisioned_iops, no_value!)
       end
       }
     }

@@ -55,7 +55,7 @@ end
 ### EBS Snapshots
 In a SparkleFormation resource:
 ```ruby
-block_device_mappings registry!(:volumes_from_ebs_snapshot, options)
+block_device_mappings registry!(:ebs_volumes, options)
 ```
 
 The `volumes_from_snapshot` registry will return a list of block device mappings.
@@ -64,9 +64,11 @@ The `volumes_from_snapshot` registry will return a list of block device mappings
 
 The registry can take an options hash:
 
-- restorable_id: A backup_id tag to use rather than the latest
-- volume_type: 'gp2', 'io1', or even 'magnetic,' if you must
-- iops: provisioned IOPS, if creating io1 volumes.  Default is 3 * volume size.
+- restorable_id: A backup_id tag to use rather than the latest.  By default, volumes will be created form the latest snapshot.
+- io1_condition: Required.  A condition to test, in order to create io1 or gp2 volumes.
+- volume_type: 'gp2', 'io1'
+- provisioned_iops: provisioned IOPS, if creating io1 volumes.  Default is 300.
+- delete_on_termination: Delete EBS volumes when the instance is terminated.  Defaults to true.
 - root_vol_size: the size of the root volume (/dev/sda).  Defaults to 12 GB.
 
 ### RDS Snapshots
